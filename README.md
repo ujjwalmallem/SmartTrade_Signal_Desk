@@ -27,11 +27,16 @@ cell, after running `!pip install -r requirements.txt` (or
 
 ## Automation
 
-`.github/workflows/signal-tracker.yml` runs the tracker every 15 minutes
-during US market hours and commits the updated `signal_desk_log.csv`
-back to this repo. **Before it can push:** go to this repo's
-Settings → Actions → General → Workflow permissions, and select
-"Read and write permissions" — otherwise the commit-back step will fail.
+`.github/workflows/signal-tracker.yml` runs the tracker every 15 minutes,
+all day, every day, and commits the updated `signal_desk_log.csv` back to
+this repo. The workflow's own schedule is deliberately coarse — the actual
+gating happens inside `signal_tracker.py` (`is_extended_hours_now()`),
+which no-ops outside a 4:00am-8:00pm ET window on weekdays (pre-market +
+regular session + after-hours) but always proceeds on weekends, since
+BTC-USD/ETH-USD trade 24/7 and still have real signals to track then.
+**Before it can push:** go to this repo's Settings → Actions → General →
+Workflow permissions, and select "Read and write permissions" —
+otherwise the commit-back step will fail.
 
 No API keys or secrets are needed (Yahoo Finance doesn't require auth).
 

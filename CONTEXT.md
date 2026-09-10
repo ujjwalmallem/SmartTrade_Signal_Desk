@@ -25,8 +25,10 @@ backtest.
   cell (run `pip install -r requirements.txt` first in Colab).
 - `requirements.txt` — yfinance, numpy, pandas, scipy.
 - `.github/workflows/signal-tracker.yml` — runs `signal_tracker.py`
-  every 15 minutes during a generous market-hours window, in `tracker`
-  mode (see below), and commits the updated log back to the repo.
+  every 15 minutes, all day every day, in `tracker` mode (see below), and
+  commits the updated log back to the repo. The cron is deliberately
+  unfiltered — `is_extended_hours_now()` inside the script is the real
+  gate (see step 8 below).
 
 ## Key environment variables
 
@@ -135,6 +137,25 @@ what came before:
    the Python-side check doing the actual precision), and made the log
    path configurable via `SIGNAL_LOG_PATH` for repo-based persistence.
 
+8. **Extended-hours + weekend crypto tracking.** The original gate
+   (`is_market_open_now()`) was scoped to the 9:30am-4:00pm ET regular
+   session only, and hard-blocked weekends entirely — which meant the
+   tracker never ran during pre-market, after-hours, or on Saturday/
+   Sunday, even though BTC-USD/ETH-USD trade 24/7 and have real signals
+   to log and mark-to-market at any of those times. Renamed to
+   `is_extended_hours_now()` and widened to 4:00am-8:00pm ET on
+   weekdays (pre-market + regular + after-hours), and made it
+   unconditionally `True` on weekends rather than `False` — an equity
+   ticker just re-shows its last close with nothing new on a Saturday,
+   which is a harmless no-op (same tradeoff the holiday-calendar gap
+   already accepted), but crypto keeps moving. Also simplified the
+   workflow's cron to `*/15 * * * *` (every 15 min, unconditionally)
+   instead of trying to hand-encode the widened window in UTC — the
+   Python-side check was already the precise gate by design (see step
+   7), so there's no reason for the cron itself to also carry that
+   precision, and this avoids the DST/day-of-week wraparound edge cases
+   a hand-tuned cron window would introduce.
+
 ## Known unresolved issues (don't assume these are fixed)
 
 - **The conviction score itself is still not well-calibrated.** This was
@@ -152,9 +173,14 @@ what came before:
 - **Not tested against a real crisis period** (e.g. 2022 rate-hike bear
   market, 2020 COVID crash) — the historical window used so far is a
   comparatively calm few years.
-- **`is_market_open_now()` has no holiday calendar.** It'll still
+- **`is_extended_hours_now()` has no holiday calendar.** It'll still
   "run" on market holidays; Yahoo Finance just won't have a new bar, so
   it's a harmless but non-free no-op.
+- **The workflow now fires every 15 minutes 24/7 instead of only during
+  a market-hours-shaped window.** More GitHub Actions minutes are spent
+  on no-op runs (nights/weekends for the equity side) than before —
+  intentional per step 8's tradeoff, but worth knowing if Actions usage
+  becomes a concern.
 - **yfinance from GitHub Actions' cloud IPs may get rate-limited or
   blocked** more than from a residential IP. The script already
   degrades gracefully on partial ticker failures, but if this becomes a

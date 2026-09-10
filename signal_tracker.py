@@ -12,7 +12,9 @@
 #   - SIGNAL_DESK_MODE=tracker skips the heavy backtest/deep-dive
 #     sections and only does the live signal log + scorecard, for
 #     cheap frequent scheduled runs
-#   - market-hours guard: no-ops outside 9:30am-4:00pm ET, Mon-Fri
+#   - extended-hours guard: no-ops outside 4:00am-8:00pm ET, Mon-Fri
+#     (pre-market + regular session + after-hours) — but never on
+#     weekends, since BTC-USD/ETH-USD trade 24/7
 #   - mark_to_market now uses intraday High/Low (not just Close), so
 #     running this every 15 minutes actually catches a stop/target
 #     the moment it's touched instead of only at end of day
@@ -38,17 +40,30 @@ warnings.filterwarnings("ignore")
 MODE = os.environ.get("SIGNAL_DESK_MODE", "full")
 
 
-def is_market_open_now():
-    """True during regular US market hours (9:30am-4:00pm ET), Mon-Fri.
+def is_extended_hours_now():
+    """True when it's worth running.
+
+    Equities (Mag7/Semis/Energy): gated to a broad 4:00am-8:00pm ET window,
+    Mon-Fri — pre-market + regular session + after-hours — rather than just
+    the 9:30am-4:00pm regular session. Outside that window Yahoo Finance
+    won't have a new equity daily bar, so an equity-only run there is a
+    harmless no-op (same as the old regular-hours gate already accepted
+    for holidays).
+
+    Crypto (BTC-USD/ETH-USD): trades 24/7, so this returns True
+    unconditionally on weekends too — an equity-heavy universe run on a
+    Saturday still has real work to do for the crypto tickers, even though
+    every equity ticker just re-shows Friday's close with no new signal.
+
     Does NOT know about market holidays (Thanksgiving, Christmas, etc.) —
     on those days this still returns True and the run will just find no
     new bar from Yahoo Finance, which is harmless but not free (still
     burns an API call + a few seconds of compute)."""
     now_ny = datetime.now(ZoneInfo("America/New_York"))
-    if now_ny.weekday() >= 5:  # Saturday=5, Sunday=6
-        return False
-    open_t = now_ny.replace(hour=9, minute=30, second=0, microsecond=0)
-    close_t = now_ny.replace(hour=16, minute=0, second=0, microsecond=0)
+    if now_ny.weekday() >= 5:  # Saturday=5, Sunday=6 — crypto never closes
+        return True
+    open_t = now_ny.replace(hour=4, minute=0, second=0, microsecond=0)
+    close_t = now_ny.replace(hour=20, minute=0, second=0, microsecond=0)
     return open_t <= now_ny <= close_t
 
 # ------------------------------------------------------------
@@ -644,10 +659,12 @@ params = {
 
 print("Loading real universe (Mag7 + Semis + Energy + Crypto) via Yahoo Finance...")
 
-if MODE == "tracker" and not is_market_open_now():
-    print("Market is closed right now (outside 9:30am-4:00pm ET, or a weekend) "
-          "— skipping this run. (This check only applies in tracker mode; a "
-          "manual full run will proceed regardless of market hours.)")
+if MODE == "tracker" and not is_extended_hours_now():
+    print("Outside the extended trading window right now (pre-market/regular/"
+          "after-hours is 4:00am-8:00pm ET, Mon-Fri; weekends always pass "
+          "because crypto trades 24/7) — skipping this run. (This check only "
+          "applies in tracker mode; a manual full run will proceed regardless "
+          "of the hour.)")
     import sys
     sys.exit(0)
 

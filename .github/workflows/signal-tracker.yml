@@ -1,11 +1,13 @@
 # Save this file as: .github/workflows/signal-tracker.yml
 #
-# Runs the signal tracker every 15 minutes on a generous UTC window that
-# covers 9:30am-4:00pm ET across BOTH standard and daylight time, so it
-# doesn't need to change twice a year. The script itself (signal_tracker.py)
-# checks the real NY market-hours clock and no-ops if the market's actually
-# closed (weekends, before/after hours) — the cron schedule is deliberately
-# coarse, the Python-side check is the precise one.
+# Runs the signal tracker every 15 minutes, all day, every day. This looks
+# wasteful but isn't: signal_tracker.py's own is_extended_hours_now() check
+# is the real, precise gate — it no-ops instantly outside 4:00am-8:00pm ET
+# on weekdays (pre-market/regular/after-hours), and even on weekends/nights
+# it still has real work to do for BTC-USD/ETH-USD, which trade 24/7. The
+# cron schedule is deliberately coarse on purpose (same philosophy as
+# before, just widened) — the Python-side check is what actually decides
+# whether a given run does anything.
 #
 # Persistence: GitHub Actions runners are thrown away after every run, so
 # there's no Google Drive to mount here. Instead, this workflow commits the
@@ -17,10 +19,12 @@ name: Signal Desk Tracker
 
 on:
   schedule:
-    # */15 12-21 * * 1-5  ->  every 15 min, 12:00-21:59 UTC, Mon-Fri
-    #   12:00 UTC = 7:00am EST / 8:00am EDT
-    #   21:59 UTC = 4:59pm EST / 5:59pm EDT
-    - cron: '*/15 12-21 * * 1-5'
+    # every 15 minutes, every hour, every day — see the note above on why
+    # this is intentionally coarse; signal_tracker.py's own clock check
+    # (is_extended_hours_now) is what actually filters this down to
+    # 4:00am-8:00pm ET weekdays for equities, plus all weekend hours for
+    # crypto tracking.
+    - cron: '*/15 * * * *'
   workflow_dispatch: {}   # lets you manually trigger a run from the Actions tab
 
 permissions:
