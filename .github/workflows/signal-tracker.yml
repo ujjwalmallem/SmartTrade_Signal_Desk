@@ -1,0 +1,60 @@
+# Save this file as: .github/workflows/signal-tracker.yml
+#
+# Runs the signal tracker every 15 minutes on a generous UTC window that
+# covers 9:30am-4:00pm ET across BOTH standard and daylight time, so it
+# doesn't need to change twice a year. The script itself (signal_tracker.py)
+# checks the real NY market-hours clock and no-ops if the market's actually
+# closed (weekends, before/after hours) — the cron schedule is deliberately
+# coarse, the Python-side check is the precise one.
+#
+# Persistence: GitHub Actions runners are thrown away after every run, so
+# there's no Google Drive to mount here. Instead, this workflow commits the
+# updated signal_desk_log.csv straight back to the repo after each run —
+# which has the nice side effect of giving you a full git history of every
+# signal ever logged.
+
+name: Signal Desk Tracker
+
+on:
+  schedule:
+    # */15 12-21 * * 1-5  ->  every 15 min, 12:00-21:59 UTC, Mon-Fri
+    #   12:00 UTC = 7:00am EST / 8:00am EDT
+    #   21:59 UTC = 4:59pm EST / 5:59pm EDT
+    - cron: '*/15 12-21 * * 1-5'
+  workflow_dispatch: {}   # lets you manually trigger a run from the Actions tab
+
+permissions:
+  contents: write   # needed to commit the updated log file back to the repo
+
+jobs:
+  track-signals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run signal tracker
+        env:
+          SIGNAL_DESK_MODE: tracker              # skip the heavy backtest/deep-dive every run
+          SIGNAL_LOG_PATH: signal_desk_log.csv   # lives in the repo root, so it can be committed
+        run: python signal_tracker.py
+
+      - name: Commit updated signal log
+        run: |
+          git config user.name "signal-desk-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add signal_desk_log.csv
+          if git diff --cached --quiet; then
+            echo "No changes to the log this run — nothing to commit."
+          else
+            git commit -m "Update signal log [skip ci]"
+            git push
+          fi
